@@ -54,20 +54,20 @@ class VideoReceiver:
     
     def parse_packet_header(self, packet):
         """Parse packet header to extract metadata"""
-        if len(packet) < 24:  # Header size
+        header_size = 16  # Size of the header in bytes
+        if len(packet) < header_size:  # Header size
             return None
         
-        header = packet[:24]
-        data = packet[24:]
+        header = packet[:header_size]
+        data = packet[header_size:]
         
         try:
-            frame_id, packet_id, total_packets, data_size, timestamp = struct.unpack('!IIIIQ', header)
+            frame_id, packet_id, total_packets, data_size = struct.unpack('!IIII', header)
             return {
                 'frame_id': frame_id,
                 'packet_id': packet_id,
                 'total_packets': total_packets,
                 'data_size': data_size,
-                'timestamp': timestamp,
                 'data': data[:data_size]
             }
         except struct.error as e:

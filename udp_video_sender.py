@@ -36,16 +36,16 @@ class VideoSender:
     def create_packet_header(self, frame_id, packet_id, total_packets, data_size):
         """
         Create packet header with sequence information
-        Header format: frame_id(4) + packet_id(4) + total_packets(4) + data_size(4) + timestamp(8)
+        Header format: frame_id(4) + packet_id(4) + total_packets(4) + data_size(4) 
         """
-        timestamp = int(time.time() * 1000000)  # microseconds
-        header = struct.pack('!IIIIQ', frame_id, packet_id, total_packets, data_size, timestamp)
+        header = struct.pack('!IIII', frame_id, packet_id, total_packets, data_size)
         return header
     
     def split_frame_to_packets(self, frame_data, frame_id):
         """Split frame data into multiple UDP packets"""
         packets = []
-        data_per_packet = self.max_packet_size - 24  # Reserve space for header
+        header_size = 16  # Size of the header in bytes
+        data_per_packet = self.max_packet_size - header_size  # Reserve space for header
         total_packets = (len(frame_data) + data_per_packet - 1) // data_per_packet
         
         for i in range(total_packets):
