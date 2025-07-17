@@ -32,6 +32,9 @@ class ChannelSimulator:
         self.receiver_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self.sender_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         
+        # 设置一个1.0秒的超时。这意味着recvfrom最多只会阻塞1秒。
+        self.receiver_socket.settimeout(1.0)
+        
         # Bind receiver socket
         self.receiver_socket.bind(('127.0.0.1', sender_port))
         
@@ -209,9 +212,9 @@ def main():
         channel = ChannelSimulator(
             sender_port=12345,
             receiver_port=12346,
-            packet_loss_rate=0.02,    # 2% packet loss
-            max_delay=0.01,           # Max 10ms delay
-            reorder_probability=0.05  # 5% reordering
+            packet_loss_rate=0.001,    # 2% packet loss
+            max_delay=0.005,           # Max 10ms delay
+            reorder_probability=0.01  # 1% reordering
         )
         channel.start_simulation()
     except Exception as e:

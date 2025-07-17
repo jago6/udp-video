@@ -11,10 +11,14 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 logger = logging.getLogger(__name__)
 
 class VideoSender:
-    def __init__(self, host='127.0.0.1', port=12345, max_packet_size=1024):
+    def __init__(self, host='127.0.0.1', port=12345, max_packet_size=1024,packets_per_burst=50,burst_sleep_time=0.001,width=640,height=480):
         self.host = host
         self.port = port
         self.max_packet_size = max_packet_size
+        self.packets_per_burst = packets_per_burst
+        self.burst_sleep_time = burst_sleep_time
+        self.width = width
+        self.height = height
         self.socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self.frame_sequence = 0
         self.packet_sequence = 0
@@ -27,8 +31,8 @@ class VideoSender:
             raise RuntimeError("Camera not available")
         
         # Set camera properties for better performance
-        self.camera.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
-        self.camera.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
+        self.camera.set(cv2.CAP_PROP_FRAME_WIDTH, self.width)
+        self.camera.set(cv2.CAP_PROP_FRAME_HEIGHT, self.height)
         self.camera.set(cv2.CAP_PROP_FPS, 30)
         
         logger.info(f"Video sender initialized on {host}:{port}")
@@ -60,27 +64,50 @@ class VideoSender:
         logger.debug(f"Frame {frame_id} split into {total_packets} packets")
         return packets
     
-    def send_frame(self, frame):
-        """Encode and send a single frame"""
-        try:
-            # Encode frame to JPEG
-            _, encoded_frame = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
-            frame_data = encoded_frame.tobytes()
+    # def send_frame(self, frame):
+    #     """Encode and send a single frame"""
+    #     try:
+
+    #         frame_data = frame.tobytes()
             
-            # Split frame into packets
+    #         # Split frame into packets
+    #         packets = self.split_frame_to_packets(frame_data, self.frame_sequence)
+            
+    #         # Send all packets for this frame
+    #         for packet in packets:
+    #             self.socket.sendto(packet, (self.host, self.port))
+    #             self.packet_sequence += 1
+            
+    #         logger.info(f"Sent frame {self.frame_sequence} ({len(packets)} packets, {len(frame_data)} bytes)")
+    #         self.frame_sequence += 1
+            
+    #     except Exception as e:
+    #         logger.error(f"Error sending frame: {e}")
+    
+    def send_frame(self, frame):
+
+        try:
+            frame_data = frame.tobytes()
+            
+            # 将帧分割成数据包
             packets = self.split_frame_to_packets(frame_data, self.frame_sequence)
             
-            # Send all packets for this frame
-            for packet in packets:
+            # 使用 enumerate 来获取包的索引,在发送循环中加入延时
+            for i, packet in enumerate(packets):
                 self.socket.sendto(packet, (self.host, self.port))
-                self.packet_sequence += 1
+
+                # 每发送一个批次的数据包后，进行短暂休眠
+                if (i + 1) % self.packets_per_burst == 0:
+                    time.sleep(self.burst_sleep_time)
             
-            logger.info(f"Sent frame {self.frame_sequence} ({len(packets)} packets, {len(frame_data)} bytes)")
+            self.packet_sequence += len(packets) # 在帧发送完后统一增加
+            
+            logger.info(f"已发送帧 {self.frame_sequence} ({len(packets)} 个包, {len(frame_data)} 字节)")
             self.frame_sequence += 1
             
         except Exception as e:
-            logger.error(f"Error sending frame: {e}")
-    
+            logger.error(f"发送帧时出错: {e}")
+        
     def start_streaming(self):
         """Start video streaming"""
         self.is_running = True
@@ -124,7 +151,7 @@ class VideoSender:
 def main():
     """Main function to run the video sender"""
     try:
-        sender = VideoSender(host='127.0.0.1', port=12345, max_packet_size=1024)
+        sender = VideoSender(host='127.0.0.1', port=12345, max_packet_size=1024,packets_per_burst=50,burst_sleep_time=0.001,width=640,height=480)
         sender.start_streaming()
     except Exception as e:
         logger.error(f"Error in main: {e}")
