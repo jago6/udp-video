@@ -14,8 +14,8 @@ logger = logging.getLogger(__name__)
 
 class VideoReceiver:
     def __init__(self, host='127.0.0.1', port=12346, frame_timeout=1.0, 
-                 video_width=640, video_height=480, video_channels=3,
-                 packet_queue_size=2000, frame_queue_size=5):
+                 video_width=640, video_height=480, video_channels=3, target_fps=30,
+                frame_queue_size=5, packet_queue_size=2000):
         """
         Args:
             host: bound host address
@@ -35,8 +35,11 @@ class VideoReceiver:
         # 视频尺寸信息
         self.video_width = video_width
         self.video_height = video_height
+        self.target_fps = target_fps
         self.video_channels = video_channels
+        
         self.expected_frame_size = self.video_width * self.video_height * self.video_channels
+        self.time_per_frame = 1.0 / self.target_fps
         
         # 创建套接字
         self.socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -47,8 +50,9 @@ class VideoReceiver:
         self.socket.settimeout(0.1)  # 非阻塞并带超时
 
         # 线程间通信队列
-        self.packet_queue = Queue(maxsize=packet_queue_size)  # 原始数据包队列
         self.frame_queue = Queue(maxsize=frame_queue_size)    # 完整帧队列
+        self.packet_queue = Queue(maxsize=packet_queue_size)  # 原始数据包队列
+        
         
         # 帧重组缓冲区 (用于包解析线程)
         self.frame_buffers = defaultdict(dict)  # frame_id -> {packet_id: packet_data}
@@ -213,7 +217,7 @@ class VideoReceiver:
             try:
                 self.frame_queue.put(frame_info, block=False)
                 self.update_stats('frames_completed')
-                logger.info(f"帧 {frame_id} 已完成并加入队列")
+                logger.debug(f"帧 {frame_id} 已完成并加入队列")
             except:
                 # 队列满了，丢弃最旧的帧
                 try:
@@ -236,28 +240,58 @@ class VideoReceiver:
         """线程3: 显示视频帧"""
         logger.info("帧显示线程已启动")
         
+        next_frame_time = time.time()
         while self.is_running:
             try:
-                # 从队列中获取完整帧
-                frame_info = self.frame_queue.get(timeout=0.1)
+                frame_info = self.frame_queue.get(timeout=0.01)
                 
-                # 显示帧
                 if self.display_frame(frame_info['data']):
                     self.update_stats('frames_displayed')
                 
-                # 检查退出信号
-                if cv2.waitKey(1) & 0xFF == ord('q'):
-                    logger.info("收到退出信号")
+                # --- 2. 核心 pacing (步调) 逻辑 ---
+                current_time = time.time()
+                wait_time = next_frame_time - current_time
+
+                wait_ms = max(1, int(wait_time * 1000))
+
+                # --- 3. 更新下一次显示的时间 ---
+                next_frame_time += self.time_per_frame
+                
+                # --- 4. 处理播放落后/卡顿的情况 ---
+                if current_time > next_frame_time:
+                    next_frame_time = current_time + self.time_per_frame
+                
+                # --- 5. 使用计算出的时间进行等待 ---
+                if cv2.waitKey(wait_ms) & 0xFF == ord('q'):
                     self.is_running = False
                     break
                     
             except Empty:
-                # 没有帧可显示，短暂休眠
-                time.sleep(0.01)
+                time.sleep(0.005) # 队列为空时短暂休眠，避免CPU空转
                 continue
-            except Exception as e:
-                if self.is_running:
-                    logger.error(f"显示帧时出错: {e}")
+        
+        # while self.is_running:
+        #     try:
+        #         # 从队列中获取完整帧
+        #         frame_info = self.frame_queue.get(timeout=0.1)
+                
+        #         # 显示帧
+        #         if self.display_frame(frame_info['data']):
+        #             self.update_stats('frames_displayed')
+                
+        #         # 检查退出信号
+        #         if cv2.waitKey(1) & 0xFF == ord('q'):
+        #             logger.info("收到退出信号")
+        #             self.is_running = False
+        #             break
+                    
+        #     except Empty:
+        #         # 没有帧可显示，短暂休眠
+        #         time.sleep(0.01)
+        #         continue
+        #     except Exception as e:
+        #         if self.is_running:
+        #             logger.error(f"显示帧时出错: {e}")
 
     def display_frame(self, frame_data):
         """解析原始数据并显示帧"""
@@ -342,7 +376,7 @@ class VideoReceiver:
         logger.info("统计信息线程已启动")
         
         while self.is_running:
-            time.sleep(5)
+            time.sleep(1)
             stats = self.get_stats()
             stats['queue_packet_size'] = self.packet_queue.qsize()
             stats['queue_frame_size'] = self.frame_queue.qsize()
@@ -432,8 +466,9 @@ def main():
             video_width=640,       # 设置宽度
             video_height=480,      # 设置高度
             video_channels=3,      # 设置通道数 (BGR=3, 灰度=1)
+            target_fps=30,        # 目标帧率
+            frame_queue_size=5,    # 完整帧队列大小
             packet_queue_size=2000,# 数据包队列大小
-            frame_queue_size=5      # 帧队列大小
         )
         receiver.start_receiving()
     except Exception as e:

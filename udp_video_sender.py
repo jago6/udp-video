@@ -7,8 +7,7 @@ import logging
 from queue import Queue, Empty, Full 
 import numpy as np
 
-# (日志配置部分不变)
-logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
 class MultiThreadedVideoSender:
@@ -119,7 +118,6 @@ class MultiThreadedVideoSender:
                     self.frame_queue.put_nowait((frame_id, frame))
                 except Full:
                     logger.warning("Frame queue is full, discard one frame to maintain real-time performance")
-      
                     pass
                 
                 # Dynamic frame rate control
@@ -127,7 +125,6 @@ class MultiThreadedVideoSender:
                 elapsed = time.time() - start_time
                 wait_time = frame_interval - elapsed
                 
-                # logger.debug(f"now processing frame {frame_id},wait time: {wait_time:.4f} seconds")
                 if wait_time > 0:
                     time.sleep(wait_time)
 
@@ -191,7 +188,7 @@ class MultiThreadedVideoSender:
                     
                 if packet_count % 1000 == 0:
                     elapsed = time.time() - start_time
-                    logger.info(f"已发送 {packet_count} 个数据包，耗时: {elapsed:.4f} 秒，平均速率: {1000 / elapsed:.2f} 包/秒")
+                    logger.info(f"已发送 {packet_count} 个数据包，耗时: {elapsed:.4f} 秒")
                     start_time = time.time()  # 重置计时器
             except Empty:
                 if not self.is_running: break
@@ -207,7 +204,7 @@ class MultiThreadedVideoSender:
         
         logger.info("Statistics thread startup")
         while self.is_running:
-            time.sleep(2)
+            time.sleep(1)
             frame_queue_size = self.frame_queue.qsize()
             packet_queue_size = self.packet_queue.qsize()
             
@@ -283,7 +280,7 @@ def main():
             burst_sleep_time=0.00,
             width=640,
             height=480,
-            fps=60,
+            fps=30,
             frame_queue_size=5,
             packet_queue_size=2000
         )
