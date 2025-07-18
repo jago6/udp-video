@@ -14,8 +14,8 @@ logger = logging.getLogger(__name__)
 class MultiThreadedVideoSender:
 
     def __init__(self, host='127.0.0.1', port=12345, max_packet_size=1024, 
-                 packets_per_burst=50, burst_sleep_time=0.001, width=640, height=480,
-                 frame_queue_size=10, packet_queue_size=2000):
+                 packets_per_burst=50, burst_sleep_time=0.001, width=640, height=480, fps=30,
+                 frame_queue_size=5, packet_queue_size=2000):
         self.host = host
         self.port = port
         self.max_packet_size = max_packet_size
@@ -23,6 +23,7 @@ class MultiThreadedVideoSender:
         self.burst_sleep_time = burst_sleep_time
         self.width = width
         self.height = height
+        self.fps = fps
         
         # Thread control
         self.is_running = False
@@ -49,7 +50,7 @@ class MultiThreadedVideoSender:
         # Set camera properties for better performance
         self.camera.set(cv2.CAP_PROP_FRAME_WIDTH, self.width)
         self.camera.set(cv2.CAP_PROP_FRAME_HEIGHT, self.height)
-        self.camera.set(cv2.CAP_PROP_FPS, 30)
+        self.camera.set(cv2.CAP_PROP_FPS, self.fps)
         
         # Set the buffer size to 1 to reduce latency
         self.camera.set(cv2.CAP_PROP_BUFFERSIZE, 1)
@@ -90,7 +91,7 @@ class MultiThreadedVideoSender:
         '''Camera acquisition and display thread - responsible for real-time acquisition of frame data and display'''
         logger.info("Camera display thread startup")
         
-        target_frame_rate = 1.0 / 30  # Target frame rate
+        frame_interval = 1.0 / self.fps  # Target frame rate
         while self.is_running:
             start_time = time.time()
             try:
@@ -101,7 +102,8 @@ class MultiThreadedVideoSender:
                     continue
                 
                 # Display local video
-                cv2.imshow('Sender - Local Video', frame)
+                # waste much time on cv2.imshow, so comment it out
+                # cv2.imshow('Sender - Local Video', frame)
                 
                 # Check exit conditions
                 if cv2.waitKey(1) & 0xFF == ord('q'):
@@ -121,8 +123,11 @@ class MultiThreadedVideoSender:
                     pass
                 
                 # Dynamic frame rate control
+               
                 elapsed = time.time() - start_time
-                wait_time = target_frame_rate - elapsed
+                wait_time = frame_interval - elapsed
+                
+                # logger.debug(f"now processing frame {frame_id},wait time: {wait_time:.4f} seconds")
                 if wait_time > 0:
                     time.sleep(wait_time)
 
@@ -182,7 +187,7 @@ class MultiThreadedVideoSender:
                 self.socket.sendto(packet, (self.host, self.port))
                 packet_count += 1
                 if packet_count % self.packets_per_burst == 0:
-                    time.sleep(self.burst_sleep_time)
+                    time.sleep(0)
                     
                 if packet_count % 1000 == 0:
                     elapsed = time.time() - start_time
@@ -194,8 +199,6 @@ class MultiThreadedVideoSender:
             except Exception as e:
                 logger.error(f"Network sending thread error: {e}")
                 self.is_running = False
-                
-        logger.info(f"The network sending thread has ended, sending a total of {packet_count} packets")
         
         logger.info("Network sending thread end")
         
@@ -204,7 +207,7 @@ class MultiThreadedVideoSender:
         
         logger.info("Statistics thread startup")
         while self.is_running:
-            time.sleep(5)
+            time.sleep(2)
             frame_queue_size = self.frame_queue.qsize()
             packet_queue_size = self.packet_queue.qsize()
             
@@ -276,12 +279,13 @@ def main():
             host='127.0.0.1', 
             port=12345, 
             max_packet_size=1024,
-            packets_per_burst=50,
-            burst_sleep_time=0.001,
+            packets_per_burst=100,
+            burst_sleep_time=0.00,
             width=640,
             height=480,
-            frame_queue_size=10,
-            packet_queue_size=5000
+            fps=60,
+            frame_queue_size=5,
+            packet_queue_size=2000
         )
         sender.start_streaming()
     except Exception as e:
